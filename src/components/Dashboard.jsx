@@ -175,7 +175,7 @@ export default function Dashboard() {
                     <label className="block text-[11px] font-bold text-peri-dark uppercase tracking-wider mb-1.5">Room ID</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. alpha-sprint" 
+                      placeholder="e.g. 01" 
                       value={newRoomId}
                       onChange={(e) => setNewRoomId(e.target.value)}
                       className="w-full p-3 bg-cream rounded-2xl border border-peri-mid text-xs font-medium focus:outline-none focus:ring-2 focus:ring-peri-dark text-gray-800 transition"
