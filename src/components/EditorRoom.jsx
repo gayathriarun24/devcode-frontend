@@ -448,12 +448,14 @@ export default function EditorRoom() {
             {showChat ? 'Hide Chat' : 'Chat'}
           </button>
 
-          <button
-            onClick={handleEndSession}
-            className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-semibold transition shadow-sm"
-          >
-            End Session
-          </button>
+          {username === effectiveHost && (
+  <button
+    onClick={handleEndSession}
+    className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-semibold transition shadow-sm"
+  >
+    End Session
+  </button>
+)}
         </div>
       </header>
 
