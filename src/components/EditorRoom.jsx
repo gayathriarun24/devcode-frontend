@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
@@ -10,23 +10,21 @@ export default function EditorRoom() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  // Scoped socket instance to prevent duplicate listeners across remounts
-  const socketRef = useRef(null);
-  if (!socketRef.current) {
-    socketRef.current = io('https://devcode-backend.onrender.com');
-  }
-  const socket = socketRef.current;
-
-  const getUsername = () => {
+  const getUsername = useCallback(() => {
     if (user?.username) return user.username;
     try {
       const storedUser = JSON.parse(localStorage.getItem('user'));
       if (storedUser?.username) return storedUser.username;
     } catch (e) {}
     return 'Developer';
-  };
+  }, [user]);
 
   const username = getUsername();
+
+  const socketRef = useRef(null);
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const remoteDecorationsRef = useRef({});
 
   const [code, setCode] = useState('// Start typing your collaborative code here...');
   const [language, setLanguage] = useState('javascript');
@@ -47,6 +45,7 @@ export default function EditorRoom() {
   // Whiteboard drawing tools state
   const canvasRef = useRef(null);
   const savedCanvasDataRef = useRef(null);
+  const lastPosRef = useRef({ x: 0, y: 0 });
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(3);
@@ -55,16 +54,49 @@ export default function EditorRoom() {
   // Copy Link state
   const [copied, setCopied] = useState(false);
 
-  const editorRef = useRef(null);
-  const monacoRef = useRef(null);
-  const remoteDecorationsRef = useRef({});
+  const updateRecentRoomStorage = useCallback((id, lang) => {
+    const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
+    const filtered = savedRooms.filter((r) => r.roomId !== id);
+    localStorage.setItem('recentRooms', JSON.stringify([{ roomId: id, language: lang }, ...filtered]));
+  }, []);
+
+  const drawLine = useCallback((ctx, x0, y0, x1, y1, color, size, isEraser) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+
+    if (isEraser) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = size * 2;
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = size;
+    }
+
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.closePath();
+    ctx.restore();
+  }, []);
 
   useEffect(() => {
+    if (!socketRef.current) {
+      socketRef.current = io('https://devcode-backend.onrender.com');
+    }
+    const socket = socketRef.current;
+
     const fetchSavedRoom = async () => {
       try {
         const res = await axios.get(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
         if (res.data) {
-          if (res.data.codeContent) setCode(res.data.codeContent);
+          if (res.data.codeContent) {
+            setCode(res.data.codeContent);
+            if (editorRef.current) {
+              editorRef.current.setValue(res.data.codeContent);
+            }
+          }
           if (res.data.language) {
             setLanguage(res.data.language);
             updateRecentRoomStorage(roomId, res.data.language);
@@ -81,39 +113,49 @@ export default function EditorRoom() {
     fetchSavedRoom();
     socket.emit('join-room', { roomId, username });
 
-    socket.on('load-messages', (history) => setMessages(history));
-    socket.on('update-code', (newCode) => {
+    const handleLoadMessages = (history) => setMessages(history);
+
+    const handleUpdateCode = (newCode) => {
       if (editorRef.current && editorRef.current.getValue() !== newCode) {
+        const position = editorRef.current.getPosition();
+        editorRef.current.setValue(newCode);
         setCode(newCode);
+        if (position) {
+          editorRef.current.setPosition(position);
+        }
       }
-    });
-    socket.on('update-language', (newLang) => {
+    };
+
+    const handleUpdateLanguage = (newLang) => {
       setLanguage(newLang);
       updateRecentRoomStorage(roomId, newLang);
-    });
-    socket.on('room-users', (activeUsers) => {
-      // Normalize users array if backend sends objects or strings
-      const normalizedUsers = activeUsers.map((u) => (typeof u === 'object' && u !== null ? u.username || u.name || String(u) : u));
-      setUsers(normalizedUsers);
-    });
-    socket.on('receive-message', (data) => setMessages((prev) => [...prev, data]));
+    };
 
-    socket.on('draw-stroke', ({ x0, y0, x1, y1, color, size, isEraser }) => {
+    const handleRoomUsers = (activeUsers) => {
+      const normalizedUsers = activeUsers.map((u) =>
+        typeof u === 'object' && u !== null ? u.username || u.name || String(u) : u
+      );
+      setUsers(normalizedUsers);
+    };
+
+    const handleReceiveMessage = (data) => setMessages((prev) => [...prev, data]);
+
+    const handleDrawStroke = ({ x0, y0, x1, y1, color, size, isEraser }) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       drawLine(ctx, x0, y0, x1, y1, color, size, isEraser);
-    });
+    };
 
-    socket.on('clear-whiteboard', () => {
+    const handleClearWhiteboard = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       savedCanvasDataRef.current = null;
-    });
+    };
 
-    socket.on('update-cursor', ({ socketId, position, username: remoteUser }) => {
+    const handleUpdateCursor = ({ socketId, position, username: remoteUser }) => {
       if (!editorRef.current || !monacoRef.current) return;
       const editor = editorRef.current;
       const monaco = monacoRef.current;
@@ -124,39 +166,49 @@ export default function EditorRoom() {
       };
       const prevDecorations = remoteDecorationsRef.current[socketId] || [];
       remoteDecorationsRef.current[socketId] = editor.deltaDecorations(prevDecorations, [decoration]);
-    });
+    };
 
-    // Clear stale cursor decorations if a user disconnects
-    socket.on('user-disconnected', (socketId) => {
+    const handleUserDisconnected = (socketId) => {
       if (editorRef.current && remoteDecorationsRef.current[socketId]) {
         editorRef.current.deltaDecorations(remoteDecorationsRef.current[socketId], []);
         delete remoteDecorationsRef.current[socketId];
       }
-    });
+    };
 
-    socket.on('session-ended', () => {
+    const handleSessionEnded = () => {
       const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
       const filtered = savedRooms.filter((r) => r.roomId !== roomId);
       localStorage.setItem('recentRooms', JSON.stringify(filtered));
       setSessionEnded(true);
-    });
+    };
+
+    socket.on('load-messages', handleLoadMessages);
+    socket.on('update-code', handleUpdateCode);
+    socket.on('update-language', handleUpdateLanguage);
+    socket.on('room-users', handleRoomUsers);
+    socket.on('receive-message', handleReceiveMessage);
+    socket.on('draw-stroke', handleDrawStroke);
+    socket.on('clear-whiteboard', handleClearWhiteboard);
+    socket.on('update-cursor', handleUpdateCursor);
+    socket.on('user-disconnected', handleUserDisconnected);
+    socket.on('session-ended', handleSessionEnded);
 
     return () => {
       socket.emit('leave-room', { roomId, username });
-      socket.off('load-messages');
-      socket.off('update-code');
-      socket.off('update-language');
-      socket.off('room-users');
-      socket.off('receive-message');
-      socket.off('draw-stroke');
-      socket.off('clear-whiteboard');
-      socket.off('update-cursor');
-      socket.off('user-disconnected');
-      socket.off('session-ended');
+      socket.off('load-messages', handleLoadMessages);
+      socket.off('update-code', handleUpdateCode);
+      socket.off('update-language', handleUpdateLanguage);
+      socket.off('room-users', handleRoomUsers);
+      socket.off('receive-message', handleReceiveMessage);
+      socket.off('draw-stroke', handleDrawStroke);
+      socket.off('clear-whiteboard', handleClearWhiteboard);
+      socket.off('update-cursor', handleUpdateCursor);
+      socket.off('user-disconnected', handleUserDisconnected);
+      socket.off('session-ended', handleSessionEnded);
     };
-  }, [roomId, username, socket]);
+  }, [roomId, username, updateRecentRoomStorage, drawLine]);
 
-  // Perserve canvas drawing data across resizing / tab switching
+  // Preserve canvas drawing data across resizing / tab switching
   useEffect(() => {
     if (outputTab === 'whiteboard' && canvasRef.current) {
       const canvas = canvasRef.current;
@@ -185,17 +237,11 @@ export default function EditorRoom() {
     }
   }, [outputTab]);
 
-  const updateRecentRoomStorage = (id, lang) => {
-    const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
-    const filtered = savedRooms.filter((r) => r.roomId !== id);
-    localStorage.setItem('recentRooms', JSON.stringify([{ roomId: id, language: lang }, ...filtered]));
-  };
-
   const handleEditorMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
     editor.onDidChangeCursorPosition((e) => {
-      socket.emit('cursor-move', {
+      socketRef.current?.emit('cursor-move', {
         roomId,
         position: { lineNumber: e.position.lineNumber, column: e.position.column },
         username
@@ -206,67 +252,56 @@ export default function EditorRoom() {
   const handleCodeChange = (value) => {
     const updatedCode = value || '';
     setCode(updatedCode);
-    socket.emit('code-change', { roomId, code: updatedCode });
+    socketRef.current?.emit('code-change', { roomId, code: updatedCode });
   };
 
   const handleLanguageChange = (e) => {
     const newLang = e.target.value;
     setLanguage(newLang);
     updateRecentRoomStorage(roomId, newLang);
-    socket.emit('language-change', { roomId, language: newLang });
+    socketRef.current?.emit('language-change', { roomId, language: newLang });
   };
 
   const sendMessage = (e) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
-    socket.emit('send-message', { roomId, message: inputMessage, username });
+    socketRef.current?.emit('send-message', { roomId, message: inputMessage, username });
     setInputMessage('');
   };
 
-  const drawLine = (ctx, x0, y0, x1, y1, color, size, isEraser) => {
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-
-    if (isEraser) {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineWidth = size * 2;
-    } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = color;
-      ctx.lineWidth = size;
-    }
-
-    ctx.lineCap = 'round';
-    ctx.stroke();
-    ctx.closePath();
-    ctx.restore();
+  // Helper to extract client coordinates from mouse or touch event
+  const getEventCoordinates = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
   };
 
   const startDrawing = (e) => {
     setIsDrawing(true);
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    canvas.lastX = e.clientX - rect.left;
-    canvas.lastY = e.clientY - rect.top;
+    const { x, y } = getEventCoordinates(e);
+    lastPosRef.current = { x, y };
   };
 
   const draw = (e) => {
     if (!isDrawing) return;
+    const { x, y } = getEventCoordinates(e);
     const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
     const isEraser = tool === 'eraser';
-    drawLine(ctx, canvas.lastX, canvas.lastY, x, y, brushColor, brushSize, isEraser);
+    drawLine(ctx, lastPosRef.current.x, lastPosRef.current.y, x, y, brushColor, brushSize, isEraser);
 
-    socket.emit('draw-stroke', {
+    socketRef.current?.emit('draw-stroke', {
       roomId,
-      x0: canvas.lastX,
-      y0: canvas.lastY,
+      x0: lastPosRef.current.x,
+      y0: lastPosRef.current.y,
       x1: x,
       y1: y,
       color: brushColor,
@@ -274,8 +309,7 @@ export default function EditorRoom() {
       isEraser
     });
 
-    canvas.lastX = x;
-    canvas.lastY = y;
+    lastPosRef.current = { x, y };
   };
 
   const stopDrawing = () => {
@@ -287,10 +321,11 @@ export default function EditorRoom() {
 
   const clearBoard = () => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     savedCanvasDataRef.current = null;
-    socket.emit('clear-whiteboard', { roomId });
+    socketRef.current?.emit('clear-whiteboard', { roomId });
   };
 
   const runCode = async () => {
@@ -303,12 +338,16 @@ export default function EditorRoom() {
         if (language === 'javascript') {
           let logs = [];
           const originalLog = console.log;
-          console.log = (...args) => logs.push(args.map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(' '));
+          console.log = (...args) =>
+            logs.push(args.map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(' '));
           new Function(code)();
           console.log = originalLog;
           setOutput(logs.length > 0 ? logs.join('\n') : 'Code executed successfully (no console output).');
         } else if (language === 'python') {
-          const response = await axios.post('https://devcode-backend.onrender.com/api/execute', { language: 'python', code });
+          const response = await axios.post('https://devcode-backend.onrender.com/api/execute', {
+            language: 'python',
+            code
+          });
           setOutput(response.data.output || 'Program executed successfully (no output).');
         }
       } catch (err) {
@@ -316,8 +355,6 @@ export default function EditorRoom() {
       }
     }
   };
-
-
 
   const saveChanges = async () => {
     try {
@@ -338,22 +375,20 @@ export default function EditorRoom() {
   };
 
   const handleEndSession = async () => {
-  try {
-    socket.emit('end-session', { roomId });
-    await axios.delete(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
+    try {
+      socketRef.current?.emit('end-session', { roomId });
+      await axios.delete(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
 
-    const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
-    const filtered = savedRooms.filter((r) => r.roomId !== roomId);
-    localStorage.setItem('recentRooms', JSON.stringify(filtered));
+      const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
+      const filtered = savedRooms.filter((r) => r.roomId !== roomId);
+      localStorage.setItem('recentRooms', JSON.stringify(filtered));
 
-    navigate('/dashboard', { state: { refresh: true } });
-  } catch (err) {
-    console.error('Failed to end and delete session:', err);
-  }
+      navigate('/dashboard', { state: { refresh: true } });
+    } catch (err) {
+      console.error('Failed to end and delete session:', err);
+    }
+  };
 
-};
-
-  // Determine effective host (fallback to roomHost or first active user)
   const effectiveHost = roomHost || (users.length > 0 ? users[0] : null);
 
   return (
@@ -449,13 +484,13 @@ export default function EditorRoom() {
           </button>
 
           {username === effectiveHost && (
-  <button
-    onClick={handleEndSession}
-    className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-semibold transition shadow-sm"
-  >
-    End Session
-  </button>
-)}
+            <button
+              onClick={handleEndSession}
+              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs sm:text-sm font-semibold transition shadow-sm"
+            >
+              End Session
+            </button>
+          )}
         </div>
       </header>
 
@@ -572,6 +607,9 @@ export default function EditorRoom() {
                   onMouseMove={draw}
                   onMouseUp={stopDrawing}
                   onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
                   className="w-full h-full cursor-crosshair bg-white block touch-none"
                 />
               )}
