@@ -6,13 +6,29 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true); // Add loading state
 
+  // useEffect(() => {
+  //   const storedUser = localStorage.getItem('user');
+  //   if (storedUser) {
+  //     setUser(JSON.parse(storedUser));
+  //   }
+  //   setLoading(false); // Done checking localStorage
+  // }, []);
+
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
+  const storedUser = localStorage.getItem('user');
+  const token = localStorage.getItem('token');
+
+  if (storedUser && token) {
+    try {
       setUser(JSON.parse(storedUser));
+    } catch (e) {
+      setUser(null);
     }
-    setLoading(false); // Done checking localStorage
-  }, []);
+  } else {
+    setUser(null); // Ensure user is null if no valid token/user exists
+  }
+  setLoading(false);
+}, []);
 
   const loginUser = (userData) => {
     localStorage.setItem('user', JSON.stringify(userData));
