@@ -350,7 +350,7 @@ export default function EditorRoom() {
   } catch (err) {
     console.error('Failed to end and delete session:', err);
   }
-};
+
 };
 
   // Determine effective host (fallback to roomHost or first active user)
