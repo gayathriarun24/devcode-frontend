@@ -5,6 +5,7 @@ import axios from 'axios';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logoutUser, loading } = useAuth(); // Added 'loading' here
 
   const [newRoomId, setNewRoomId] = useState('');
@@ -20,9 +21,10 @@ export default function Dashboard() {
       return;
     }
 
+    // 3. Re-read localStorage whenever location or auth state changes
     const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
     setRecentRooms(savedRooms);
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, location]);
 
   const extractRoomId = (input) => {
     let cleanInput = input.trim();

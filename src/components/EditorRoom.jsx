@@ -317,9 +317,7 @@ export default function EditorRoom() {
     }
   };
 
-  const handleEndSession = () => {
-    socket.emit('end-session', { roomId });
-  };
+
 
   const saveChanges = async () => {
     try {
@@ -338,6 +336,22 @@ export default function EditorRoom() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleEndSession = async () => {
+  try {
+    socket.emit('end-session', { roomId });
+    await axios.delete(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
+
+    const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
+    const filtered = savedRooms.filter((r) => r.roomId !== roomId);
+    localStorage.setItem('recentRooms', JSON.stringify(filtered));
+
+    navigate('/dashboard', { state: { refresh: true } });
+  } catch (err) {
+    console.error('Failed to end and delete session:', err);
+  }
+};
+};
 
   // Determine effective host (fallback to roomHost or first active user)
   const effectiveHost = roomHost || (users.length > 0 ? users[0] : null);
