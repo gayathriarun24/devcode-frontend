@@ -5,7 +5,7 @@ import axios from 'axios';
 import Editor from '@monaco-editor/react';
 import { useAuth } from '../context/AuthContext';
 
-const socket = io('http://localhost:5000');
+const socket = io('https://devcode-backend.onrender.com');
 
 export default function EditorRoom() {
   const { roomId } = useParams();
@@ -55,8 +55,7 @@ export default function EditorRoom() {
 
   useEffect(() => {
     const fetchSavedRoom = async () => {
-      try {
-        const res = await axios.get(`http://localhost:5000/api/rooms/${roomId}`);
+      try {const res = await axios.get(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
         if (res.data) {
           if (res.data.codeContent) setCode(res.data.codeContent);
           if (res.data.language) {
@@ -258,7 +257,7 @@ export default function EditorRoom() {
           console.log = originalLog;
           setOutput(logs.length > 0 ? logs.join('\n') : 'Code executed successfully (no console output).');
         } else if (language === 'python') {
-          const response = await axios.post('http://localhost:5000/api/execute', { language: 'python', code });
+          const response = await axios.post('https://devcode-backend.onrender.com/api/execute', { language: 'python', code });
           setOutput(response.data.output || 'Program executed successfully (no output).');
         }
       } catch (err) {
@@ -274,7 +273,7 @@ export default function EditorRoom() {
   const saveChanges = async () => {
     try {
       setSaving(true);
-      await axios.put(`http://localhost:5000/api/rooms/save/${roomId}`, { codeContent: code, language });
+      await axios.put(`https://devcode-backend.onrender.com/api/rooms/save/${roomId}`, { codeContent: code, language });
       alert('Code saved successfully!');
     } catch (err) {
       alert('Failed to save code');

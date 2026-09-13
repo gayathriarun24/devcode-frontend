@@ -35,7 +35,7 @@ export default function Dashboard() {
 
   const removeRecentRoom = async (targetRoomId) => {
     try {
-      await axios.delete(`http://localhost:5000/api/rooms/${targetRoomId}`);
+      await axios.delete(`https://devcode-backend.onrender.com/api/rooms/${targetRoomId}`);
     } catch (err) {
       console.error('Error deleting room from DB', err);
     }
@@ -56,7 +56,7 @@ export default function Dashboard() {
     const defaultLanguage = 'javascript';
 
     try {
-      await axios.post('http://localhost:5000/api/rooms/join', {
+      await axios.post('https://devcode-backend.onrender.com/api/rooms/join', {
         roomId,
         roomName: newRoomName.trim() || `Room ${roomId}`,
         language: defaultLanguage,
@@ -83,7 +83,7 @@ export default function Dashboard() {
     setIsJoining(true);
 
     try {
-      const response = await axios.get(`http://localhost:5000/api/rooms/${roomId}`);
+      const response = await axios.get(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
       
       if (response.data) {
         const savedRooms = JSON.parse(localStorage.getItem('recentRooms')) || [];
