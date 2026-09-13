@@ -182,6 +182,10 @@ export default function EditorRoom() {
       setSessionEnded(true);
     };
 
+    const handlePythonOutput = ({ type, data }) => {
+      setOutput((prev) => prev + data);
+    };
+
     socket.on('load-messages', handleLoadMessages);
     socket.on('update-code', handleUpdateCode);
     socket.on('update-language', handleUpdateLanguage);
@@ -192,6 +196,7 @@ export default function EditorRoom() {
     socket.on('update-cursor', handleUpdateCursor);
     socket.on('user-disconnected', handleUserDisconnected);
     socket.on('session-ended', handleSessionEnded);
+    socket.on('python-output', handlePythonOutput);
 
     return () => {
       socket.emit('leave-room', { roomId, username });
@@ -205,6 +210,7 @@ export default function EditorRoom() {
       socket.off('update-cursor', handleUpdateCursor);
       socket.off('user-disconnected', handleUserDisconnected);
       socket.off('session-ended', handleSessionEnded);
+      socket.off('python-output', handlePythonOutput);
     };
   }, [roomId, username, updateRecentRoomStorage, drawLine]);
 
@@ -333,9 +339,9 @@ export default function EditorRoom() {
       setOutputTab('preview');
     } else {
       setOutputTab('console');
-      setOutput('Running code...');
-      try {
-        if (language === 'javascript') {
+      if (language === 'javascript') {
+        setOutput('Running JavaScript...\n');
+        try {
           let logs = [];
           const originalLog = console.log;
           console.log = (...args) =>
@@ -343,15 +349,12 @@ export default function EditorRoom() {
           new Function(code)();
           console.log = originalLog;
           setOutput(logs.length > 0 ? logs.join('\n') : 'Code executed successfully (no console output).');
-        } else if (language === 'python') {
-          const response = await axios.post('https://devcode-backend.onrender.com/api/execute', {
-            language: 'python',
-            code
-          });
-          setOutput(response.data.output || 'Program executed successfully (no output).');
+        } catch (err) {
+          setOutput(`Error: ${err.message}`);
         }
-      } catch (err) {
-        setOutput(`Error: ${err.response?.data?.message || err.message}`);
+      } else if (language === 'python') {
+        setOutput('Running python...\n');
+        socketRef.current?.emit('run-python', { roomId, code });
       }
     }
   };
@@ -583,11 +586,40 @@ export default function EditorRoom() {
               )}
             </div>
 
-            <div className="flex-1 overflow-hidden relative bg-white">
+            <div className="flex-1 overflow-hidden relative bg-white flex flex-col">
               {outputTab === 'console' && (
-                <pre className="w-full h-full bg-gray-900 text-green-400 p-3 sm:p-4 overflow-y-auto text-xs sm:text-sm whitespace-pre-wrap">
-                  {output}
-                </pre>
+                <>
+                  <pre className="flex-1 w-full bg-gray-900 text-green-400 p-3 sm:p-4 overflow-y-auto text-xs sm:text-sm whitespace-pre-wrap">
+                    {output}
+                  </pre>
+                  {language === 'python' && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const inputVal = e.target.elements.pyInput.value;
+                        setOutput((prev) => prev + inputVal + '\n');
+                        socketRef.current?.emit('provide-python-input', { input: inputVal });
+                        e.target.reset();
+                      }}
+                      className="flex border-t border-gray-700 bg-gray-950 p-2 gap-2"
+                    >
+                      <span className="text-green-400 font-mono text-xs flex items-center">&gt;</span>
+                      <input
+                        type="text"
+                        name="pyInput"
+                        placeholder="Type input and press Enter..."
+                        className="flex-1 bg-transparent text-green-400 font-mono text-xs focus:outline-none"
+                        autoComplete="off"
+                      />
+                      <button
+                        type="submit"
+                        className="px-2 py-0.5 bg-gray-800 text-xs text-gray-300 rounded hover:bg-gray-700"
+                      >
+                        Send
+                      </button>
+                    </form>
+                  )}
+                </>
               )}
               {outputTab === 'preview' && (
                 <iframe
