@@ -25,6 +25,7 @@ export default function EditorRoom() {
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const remoteDecorationsRef = useRef({});
+  const hasLoadedInitialCode = useRef(false);
 
   const [code, setCode] = useState('// Start typing your collaborative code here...');
   const [language, setLanguage] = useState('javascript');
@@ -87,28 +88,34 @@ export default function EditorRoom() {
     }
     const socket = socketRef.current;
 
+ 
+
     const fetchSavedRoom = async () => {
-      try {
-        const res = await axios.get(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
-        if (res.data) {
-          if (res.data.codeContent) {
-            setCode(res.data.codeContent);
-            if (editorRef.current) {
-              editorRef.current.setValue(res.data.codeContent);
-            }
-          }
-          if (res.data.language) {
-            setLanguage(res.data.language);
-            updateRecentRoomStorage(roomId, res.data.language);
-          }
-          if (res.data.hostUsername || res.data.host || res.data.createdBy) {
-            setRoomHost(res.data.hostUsername || res.data.host || res.data.createdBy);
-          }
+  try {
+    const res = await axios.get(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
+    if (res.data && !hasLoadedInitialCode.current) {
+      const currentEditorValue = editorRef.current ? editorRef.current.getValue() : '';
+      
+      // Only set initial code if the editor is currently empty
+      if (res.data.codeContent && isDefaultPlaceholder) {
+        setCode(res.data.codeContent);
+        if (editorRef.current) {
+          editorRef.current.setValue(res.data.codeContent);
         }
-      } catch (err) {
-        console.error('Could not load saved room data from database', err);
       }
-    };
+      if (res.data.language) {
+        setLanguage(res.data.language);
+        updateRecentRoomStorage(roomId, res.data.language);
+      }
+      if (res.data.hostUsername || res.data.host || res.data.createdBy) {
+        setRoomHost(res.data.hostUsername || res.data.host || res.data.createdBy);
+      }
+      hasLoadedInitialCode.current = true;
+    }
+  } catch (err) {
+    console.error('Could not load saved room data from database', err);
+  }
+};
 
     fetchSavedRoom();
     socket.emit('join-room', { roomId, username });
