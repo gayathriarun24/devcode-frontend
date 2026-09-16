@@ -686,7 +686,7 @@ export default function EditorRoom() {
                             minute: '2-digit',
                             hour12: true
                           }) 
-                          : 'Just now'}
+                          : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
                       </span>
                     </div>
                     <p className="break-words">{msg.message}</p>
