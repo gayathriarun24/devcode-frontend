@@ -88,34 +88,34 @@ export default function EditorRoom() {
     }
     const socket = socketRef.current;
 
- 
-
     const fetchSavedRoom = async () => {
-  try {
-    const res = await axios.get(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
-    if (res.data && !hasLoadedInitialCode.current) {
-      const currentEditorValue = editorRef.current ? editorRef.current.getValue() : '';
-      
-      // Only set initial code if the editor is currently empty
-      if (res.data.codeContent && isDefaultPlaceholder) {
-        setCode(res.data.codeContent);
-        if (editorRef.current) {
-          editorRef.current.setValue(res.data.codeContent);
+      try {
+        const res = await axios.get(`https://devcode-backend.onrender.com/api/rooms/${roomId}`);
+        if (res.data && !hasLoadedInitialCode.current) {
+          
+          if (res.data.codeContent) {
+            setCode(res.data.codeContent);
+            if (editorRef.current) {
+              editorRef.current.setValue(res.data.codeContent);
+            }
+          }
+          if (res.data.language) {
+            setLanguage(res.data.language);
+            updateRecentRoomStorage(roomId, res.data.language);
+          }
+          if (res.data.hostUsername || res.data.host || res.data.createdBy) {
+            setRoomHost(res.data.hostUsername || res.data.host || res.data.createdBy);
+          }
+          // Load past messages if available in room data
+          if (res.data.messages && Array.isArray(res.data.messages)) {
+            setMessages(res.data.messages);
+          }
+          hasLoadedInitialCode.current = true;
         }
+      } catch (err) {
+        console.error('Could not load saved room data from database', err);
       }
-      if (res.data.language) {
-        setLanguage(res.data.language);
-        updateRecentRoomStorage(roomId, res.data.language);
-      }
-      if (res.data.hostUsername || res.data.host || res.data.createdBy) {
-        setRoomHost(res.data.hostUsername || res.data.host || res.data.createdBy);
-      }
-      hasLoadedInitialCode.current = true;
-    }
-  } catch (err) {
-    console.error('Could not load saved room data from database', err);
-  }
-};
+    };
 
     fetchSavedRoom();
     socket.emit('join-room', { roomId, username });
@@ -282,7 +282,6 @@ export default function EditorRoom() {
     setInputMessage('');
   };
 
-  // Helper to extract client coordinates from mouse or touch event
   const getEventCoordinates = (e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -681,12 +680,14 @@ export default function EditorRoom() {
                     <div className="flex justify-between items-center gap-2 mb-1 opacity-75 text-[10px]">
                       <span className="font-bold">{msg.username}</span>
                       <span>
-  {new Date(msg.time || msg.timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  })}
-</span>
+                        {msg.time || msg.timestamp || msg.createdAt ? 
+                          new Date(msg.time || msg.timestamp || msg.createdAt).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          }) 
+                          : 'Just now'}
+                      </span>
                     </div>
                     <p className="break-words">{msg.message}</p>
                   </div>
