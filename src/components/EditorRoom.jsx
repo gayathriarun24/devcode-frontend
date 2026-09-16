@@ -680,7 +680,13 @@ export default function EditorRoom() {
                   >
                     <div className="flex justify-between items-center gap-2 mb-1 opacity-75 text-[10px]">
                       <span className="font-bold">{msg.username}</span>
-                      <span>{msg.time}</span>
+                      <span>
+  {new Date(msg.time || msg.timestamp).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  })}
+</span>
                     </div>
                     <p className="break-words">{msg.message}</p>
                   </div>
